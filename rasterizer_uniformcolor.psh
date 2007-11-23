@@ -1,0 +1,24 @@
+
+#line 2 "rasterizer_uniformcolor.psh"
+
+
+
+struct PS_OUTPUT
+{
+	float4 vColor		: COLOR0;
+};
+
+
+
+float4 vColor;
+
+
+
+PS_OUTPUT PS_Default()
+{
+	PS_OUTPUT OUT;
+	
+	OUT.vColor = vColor;
+
+	return OUT;
+}

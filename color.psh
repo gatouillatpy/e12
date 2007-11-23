@@ -1,0 +1,7 @@
+
+float4 vColor;
+
+float4 PS_Default ( ) : COLOR0
+{
+	return vColor;
+}

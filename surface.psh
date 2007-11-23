@@ -1,0 +1,193 @@
+
+#line 2 "surface.psh"
+
+
+
+texture texBuffer;
+
+sampler smpBuffer = sampler_state
+{
+	Texture	= (texBuffer);
+	MipFilter = POINT;
+	MinFilter = POINT;
+	MagFilter = POINT;
+};
+
+
+
+struct PS_INPUT
+{
+	float2 vXY			: VPOS;
+	float2 vTexture0	: TEXCOORD0;
+};
+
+struct PS_OUTPUT
+{
+	float4 vPoint		: COLOR0;
+	float4 vNormal		: COLOR1;
+	float fDepth		: DEPTH;
+};
+
+
+
+float2 vFactor; // {fScreenWidth, fScreenHeight}
+
+float fZPlane; // fZNearPlane
+float fZFactor; // fZFarPlane - fZNearPlane
+
+float3 vRayOrigin;
+
+float4x4 matWorld;
+float4x4 matWorldInverse;
+
+float3 vNode[16];
+float3 vNodeDU[12];
+float3 vNodeDV[12];
+
+// NB : les constantes ne sont autres que des variables dont les valeurs par défaut sont attribuées par ID3DXConstantTable::SetDefaults
+//      ces valeurs sont automatiquement attribuées dans le ID3DXEffect::Begin sinon, et ce fourbe de PIX aussi le fait sans rien dire...
+const float TOL = 0.001f;
+const int MAX = 12;
+
+
+
+float B3( int i, float t )
+{
+	return pow(t, i) * pow(1.0f - t, 3 - i) * ((i % 3) ? 3.0f : 1.0f);
+}
+
+float B2( int i, float t )
+{
+	return pow(t, i) * pow(1.0f - t, 2 - i) * ((i % 2) ? 2.0f : 1.0f);
+}
+
+
+
+PS_OUTPUT PS_Default( PS_INPUT IN )
+{
+	PS_OUTPUT OUT;
+
+	float2 vUV = IN.vXY / vFactor;
+	float3 vRayDirection = tex2D( smpBuffer, vUV ).xyz;
+	
+	float3 vRayTarget = vRayOrigin + vRayDirection;
+	vRayOrigin = mul( matWorldInverse, float4( vRayOrigin, 1.0f ) );
+	vRayTarget = mul( matWorldInverse, float4( vRayTarget, 1.0f ) );
+	vRayDirection = vRayTarget - vRayOrigin;
+
+	vUV = IN.vTexture0;
+	
+	// calcul des vecteurs directeurs du plan perpendiculaire au rayon
+
+	float3 n1, n2;
+	float3 d = abs(vRayDirection);
+	if ( d.x > d.y && d.x > d.z )
+		n1 = float3( vRayDirection.y, -vRayDirection.x, 0.0f );
+	else
+		n1 = float3( 0.0f, vRayDirection.z, -vRayDirection.y );
+	n2 = cross(n1, vRayDirection);
+
+	float f1 = dot(n1, vRayOrigin);
+	float f2 = dot(n2, vRayOrigin);
+	
+	// application de la méthode de Newton pour trouver l'intersection du rayon avec la surface
+	
+	float fError = 999999.999f;
+	float fPreviousError;
+	
+	int n = 0;
+	
+	float2 vecF = float2( 0.0f, 0.0f );
+	float2x2 matJ = float2x2( 0.0f, 0.0f, 0.0f, 0.0f );
+	float3 vecS;
+	float3 vecDU, vecDV;
+
+	do
+	{
+		vUV -= mul(matJ, vecF);
+		
+		float fB[16];
+		float4 vBU3, vBV3;
+		float3 vBU2, vBV2;
+		
+		// calcul de S
+		
+		vBU3 = float4( B3(0, vUV.x), B3(1, vUV.x), B3(2, vUV.x), B3(3, vUV.x) );
+		vBV3 = float4( B3(0, vUV.y), B3(1, vUV.y), B3(2, vUV.y), B3(3, vUV.y) );
+		fB[ 0] = vBU3.x * vBV3.x; fB[ 1] = vBU3.y * vBV3.x; fB[ 2] = vBU3.z * vBV3.x; fB[ 3] = vBU3.w * vBV3.x;
+		fB[ 4] = vBU3.x * vBV3.y; fB[ 5] = vBU3.y * vBV3.y; fB[ 6] = vBU3.z * vBV3.y; fB[ 7] = vBU3.w * vBV3.y;
+		fB[ 8] = vBU3.x * vBV3.z; fB[ 9] = vBU3.y * vBV3.z; fB[10] = vBU3.z * vBV3.z; fB[11] = vBU3.w * vBV3.z;
+		fB[12] = vBU3.x * vBV3.w; fB[13] = vBU3.y * vBV3.w; fB[14] = vBU3.z * vBV3.w; fB[15] = vBU3.w * vBV3.w;
+		
+		vecS = float3( 0.0f, 0.0f, 0.0f );
+		for ( int k = 0 ; k < 16 ; k++ )
+			vecS += vNode[k] * fB[k];
+		
+		vecF.x = dot(vecS, n1) - f1;
+		vecF.y = dot(vecS, n2) - f2;
+		
+		// calcul de dS/du
+	  
+		vBU2 = float3( B2(0, vUV.x), B2(1, vUV.x), B2(2, vUV.x) );
+		fB[ 0] = vBU2.x * vBV3.x; fB[ 1] = vBU2.y * vBV3.x; fB[ 2] = vBU2.z * vBV3.x;
+		fB[ 3] = vBU2.x * vBV3.y; fB[ 4] = vBU2.y * vBV3.y; fB[ 5] = vBU2.z * vBV3.y;
+		fB[ 6] = vBU2.x * vBV3.z; fB[ 7] = vBU2.y * vBV3.z; fB[ 8] = vBU2.z * vBV3.z;
+		fB[ 9] = vBU2.x * vBV3.w; fB[10] = vBU2.y * vBV3.w; fB[11] = vBU2.z * vBV3.w;
+		
+		vecDU = float3( 0.0f, 0.0f, 0.0f );
+		for ( int k = 0 ; k < 12 ; k++ )
+			vecDU += vNodeDU[k] * fB[k];
+		vecDU *= 3.0f;
+		
+		// calcul de dS/dv
+	  
+		vBV2 = float3( B2(0, vUV.y), B2(1, vUV.y), B2(2, vUV.y) );
+		fB[ 0] = vBU3.x * vBV2.x; fB[ 1] = vBU3.y * vBV2.x; fB[ 2] = vBU3.z * vBV2.x; fB[ 3] = vBU3.w * vBV2.x;
+		fB[ 4] = vBU3.x * vBV2.y; fB[ 5] = vBU3.y * vBV2.y; fB[ 6] = vBU3.z * vBV2.y; fB[ 7] = vBU3.w * vBV2.y;
+		fB[ 8] = vBU3.x * vBV2.z; fB[ 9] = vBU3.y * vBV2.z; fB[10] = vBU3.z * vBV2.z; fB[11] = vBU3.w * vBV2.z;
+		
+		vecDV = float3( 0.0f, 0.0f, 0.0f );
+		for ( int k = 0 ; k < 12 ; k++ )
+			vecDV += vNodeDV[k] * fB[k];
+		vecDV *= 3.0f;
+		
+		// calcul de la matrice jacobienne
+	  
+		matJ._22 = dot(n1, vecDU);
+		matJ._12 = -dot(n1, vecDV);
+		matJ._21 = -dot(n2, vecDU);
+		matJ._11 = dot(n2, vecDV);
+		matJ /= determinant(matJ);
+		
+		// évaluation de l'erreur
+	  
+		fPreviousError = fError; 
+		fError = length(vecF);
+		
+		n++;
+		
+	} while ( fError > TOL && fError <= fPreviousError && n < MAX );
+
+	// on vérifie finallement si le point appartient à la surface
+
+	if ( fError <= TOL && vUV.x >= 0 && vUV.x <= 1 && vUV.y >= 0 && vUV.y <= 1 )
+	{
+		float3 vPoint = vecS;
+		float3 vNormal = normalize(cross(vecDU, vecDV));
+		float3 vTarget = vPoint + vNormal;
+		vPoint = mul( matWorld, float4( vPoint, 1.0f ) );
+		vTarget = mul( matWorld, float4( vTarget, 1.0f ) );
+		vNormal = vTarget - vPoint;
+		float fDepth = length(vRayOrigin - vPoint);
+
+		OUT.vPoint = float4( vPoint, fDepth );
+		OUT.vNormal = float4( vNormal, 1.0f );
+		OUT.fDepth = (fDepth - fZPlane) / fZFactor;;
+	}
+	else
+	{
+		clip(-1.0f);
+	}
+	
+	return OUT;
+}

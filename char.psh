@@ -1,0 +1,21 @@
+
+sampler pTexture;
+
+float4 vMaskColor;
+float4 vTestColor;
+
+float4 vMin, vMax;
+
+float4 PS_Default ( float2 vTexcoord : TEXCOORD0, float2 vOffset : TEXCOORD1 ) : COLOR0
+{
+	if ( vOffset.x < vMin.x ) clip(-1.0f);
+	if ( vOffset.x > vMax.x ) clip(-1.0f);
+	if ( vOffset.y < vMin.y ) clip(-1.0f);
+	if ( vOffset.y > vMax.y ) clip(-1.0f);
+	
+	float4 vColor = tex2D( pTexture, vTexcoord ) * vMaskColor;
+	
+	if ( length( vTestColor - vColor ) < 0.001f ) clip(-1.0f);
+
+	return vColor;
+}

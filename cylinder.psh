@@ -1,0 +1,114 @@
+
+#line 2 "cylinder.psh"
+
+
+
+texture texBuffer;
+
+sampler smpBuffer = sampler_state
+{
+    Texture   = (texBuffer);
+    MipFilter = POINT;
+    MinFilter = POINT;
+    MagFilter = POINT;
+};
+
+
+struct PS_INPUT
+{
+	float2 vXY			: VPOS;
+};
+
+struct PS_OUTPUT
+{
+	float4 vPoint		: COLOR0;
+	float4 vNormal		: COLOR1;
+	float fDepth		: DEPTH;
+};
+
+
+
+float2 vFactor;
+
+float fRadius;
+float fHeight;
+float3 vRayOrigin;
+
+float fZPlane;
+float fZFactor;
+
+float4x4 matWorld;
+float4x4 matWorldInverse;
+
+
+
+PS_OUTPUT PS_Default( PS_INPUT IN )
+{
+	PS_OUTPUT OUT;
+
+	float2 vUV = IN.vXY / vFactor;
+	float3 vRayDirection = tex2D( smpBuffer, vUV ).xyz;
+
+	float3 vRayTarget = vRayOrigin + vRayDirection;
+	vRayOrigin = mul( matWorldInverse, float4( vRayOrigin, 1.0f ) );
+	vRayTarget = mul( matWorldInverse, float4( vRayTarget, 1.0f ) );
+	vRayDirection = vRayTarget - vRayOrigin;
+
+	float a = dot( vRayDirection.xz, vRayDirection.xz );
+	float b = dot( vRayDirection.xz, vRayOrigin.xz );
+	float c = dot( vRayOrigin.xz, vRayOrigin.xz ) - fRadius * fRadius;
+
+	float delta = b * b - a * c;
+
+	float t;
+	if ( delta > 0.0f )
+	{  
+		delta = sqrt(delta);
+
+		float t1 = (-b - delta) / a;
+		float t2 = (-b + delta) / a;
+
+		float y1 = vRayOrigin.y + t1 * vRayDirection.y;
+		float y2 = vRayOrigin.y + t2 * vRayDirection.y;
+		float ymax = +fHeight * 0.5f;
+		float ymin = -fHeight * 0.5f;
+		
+		if ( t1 > 0 )
+		{
+			if ( t1 < t2 )
+			{
+				if ( y1 > ymin && y1 < ymax )
+					t = t1;
+				else if ( y2 > ymin && y2 < ymax )
+					t = t2;
+				else
+					clip(-1.0f);
+			}
+		}
+		else if ( t2 > 0 )
+		{
+			if ( y2 > ymin && y2 < ymax )
+				t = t2;
+			else
+				clip(-1.0f);
+		}
+	}
+	else
+	{
+		clip(-1.0f);
+	}
+	
+	float3 vPoint = vRayOrigin + t * vRayDirection;
+	float3 vNormal = float3( vPoint.x, 0.0f, vPoint.z ) / fRadius;
+	float3 vTarget = vPoint + vNormal;
+	vPoint = mul( matWorld, float4( vPoint, 1.0f ) );
+	vTarget = mul( matWorld, float4( vTarget, 1.0f ) );
+	vNormal = vTarget - vPoint;
+	float fDepth = length(vRayOrigin - vPoint);
+	
+	OUT.vPoint = float4( vPoint, fDepth );
+	OUT.vNormal = float4( vNormal, 1.0f );
+	OUT.fDepth = (fDepth - fZPlane) / fZFactor;
+
+	return OUT;
+}

@@ -1,0 +1,84 @@
+
+#line 2 "final.psh"
+
+
+
+texture texSpace;
+
+sampler smpSpace = sampler_state
+{
+	Texture	= (texSpace);
+	MipFilter = LINEAR;
+	MinFilter = LINEAR;
+	MagFilter = LINEAR;
+};
+
+
+
+texture texLight;
+
+sampler smpLight = sampler_state
+{
+	Texture	= (texLight);
+	MipFilter = LINEAR;
+	MinFilter = LINEAR;
+	MagFilter = LINEAR;
+};
+
+
+
+struct PS_INPUT
+{
+	float2 vXY			: VPOS;
+};
+
+struct PS_OUTPUT
+{
+	float4 vColor		: COLOR0;
+};
+
+
+
+float2 vFactor; // {fScreenWidth, fScreenHeight}
+
+float4x4 matLightViewProj;
+float3 vOrigin;
+
+
+PS_OUTPUT PS_Default( PS_INPUT IN )
+{
+	PS_OUTPUT OUT;
+
+	float2 vUV = IN.vXY / vFactor;
+	float4 vSpace = tex2D( smpSpace, vUV );
+	
+	if ( vSpace.w <= 0.0f )
+		clip(-1.0f);
+
+	float4 vSpacePoint = float4( vSpace.xyz, 1.0f ); // coordonnées du point géométrique dans l'espace
+	
+	float4 vLightPoint = mul( matLightViewProj, vSpacePoint ); // coordonnées du point géométrique projeté dans l'espace de la lumière
+	
+    float2 vLightUV = 0.5f * vLightPoint.xy / vLightPoint.w + float2( 0.5f, 0.5f );
+    vLightUV.y = 1.0f - vLightUV.y;
+
+	float4 vLight = tex2D( smpLight, vLightUV );
+	float fDepth = vLight.w;
+
+	float fValue = length( vSpacePoint - vOrigin );
+	
+	if ( vLight.w <= 0.0f )
+	{
+		OUT.vColor = float4( 1.0f, 1.0f, 1.0f, 1.0f );
+	}
+	else if ( (fValue - fDepth) * 0.001f < 0.1f )
+	{
+		OUT.vColor = float4( 1.0f, 1.0f, 1.0f, 1.0f );
+	}
+	else
+	{
+		OUT.vColor = float4( 0.0f, 0.0f, 0.0f, 0.0f );
+	}
+
+	return OUT;
+}

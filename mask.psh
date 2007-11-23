@@ -1,0 +1,9 @@
+
+sampler pTexture;
+
+float4 vColor;
+
+float4 PS_Default ( float2 vTexcoord : TEXCOORD0 ) : COLOR0
+{
+	return tex2D( pTexture, vTexcoord ) * vColor;
+}
